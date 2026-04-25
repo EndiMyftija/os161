@@ -1,0 +1,78 @@
+# -----------------------------
+
+# OS161 build artifacts
+
+# -----------------------------
+
+build/
+root/
+kern/compile/
+
+# Kernel build outputs
+
+*.o
+*.a
+*.so
+*.ko
+
+# Dependency files
+
+*.d
+
+# Executables / binaries
+
+*.elf
+*.bin
+
+# -----------------------------
+
+# Temporary / editor files
+
+# -----------------------------
+
+*~
+*.swp
+*.swo
+*.tmp
+*.bak
+
+# macOS
+
+.DS_Store
+
+# -----------------------------
+
+# VSCode (optional)
+
+# -----------------------------
+
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# -----------------------------
+
+# Logs
+
+# -----------------------------
+
+*.log
+
+# -----------------------------
+
+# Misc
+
+# -----------------------------
+
+.cache/
+
+# OS161 build directories
+src/kern/compile/
+kern/compile/
+build/
+
+# Dependency / generated files
+*.depend*
+*.o
+*.a
