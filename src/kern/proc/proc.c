@@ -82,6 +82,11 @@ proc_create(const char *name)
 	/* VFS fields */
 	proc->p_cwd = NULL;
 
+	// Initialize the File Descriptor Table to NULL
+	for(int i = 0; i < OPEN_MAX; i++) {
+		proc->p_fdt[i] = NULL;
+	}
+
 	return proc;
 }
 

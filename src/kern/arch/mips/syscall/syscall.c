@@ -36,7 +36,12 @@
 #include <current.h>
 #include <syscall.h>
 #include <copyinout.h>
-
+#include <limits.h>
+#include <proc.h>
+#include <vnode.h>
+#include <uio.h>
+#include <iovec.h>
+#include <vnode.h>
 
 /*
  * System call dispatcher.
@@ -114,43 +119,147 @@ syscall(struct trapframe *tf)
 
 		case SYS_write:
 		{
-			// Ignore fd (tf->tf_a0) for now. Assume stdout.
-			char kernel_buffer[128];
-			size_t length = (size_t)tf->tf_a2;
-			size_t bytes_left = length;
-			size_t offset = 0;
-			int copy_result;
-
-			while (bytes_left > 0) {
-				size_t chunk_size = (bytes_left < 128) ? bytes_left : 128;
-				
-				// Safely copy a chunk from user space
-				copy_result = copyin((const_userptr_t)(tf->tf_a1 + offset), kernel_buffer, chunk_size);
-				
-				// If copyin failed, bail out and return the error code
-				if (copy_result != 0) {
-					err = copy_result;
-					break; 
-				}
-
-				// Print the chunk safely
-				for (size_t j = 0; j < chunk_size; j++) {
-					putch(kernel_buffer[j]);
-				}
-
-				bytes_left -= chunk_size;
-				offset += chunk_size;
+			//1. Extraction and Validation phase
+			int fd = tf->tf_a0;
+			if (fd < 0 || fd >= OPEN_MAX) {
+				err = EBADF;
+				break;
 			}
 
-			// If we didn't error out, tell the dispatcher we succeeded
-			if (err == 0) {
-				retval = length; // Return the number of bytes written
+			// 2. FDT Extraction & Null Check
+			spinlock_acquire(&curproc->p_lock);
+			struct file_handle *fh = curproc->p_fdtable[fd];
+			if (fh == NULL) {
+				spinlock_release(&curproc->p_lock);
+				err = EBADF;
+				break;
 			}
-			
+			spinlock_release(&curproc->p_lock);
+
+			// 3. File Handle Lock & Permission Check
+			lock_acquire(fh->fh_lock);
+
+			// O_ACCMODE is a bitmask (usually value 3) used to extract the read/write bits.
+			int how = fh->access_flags & O_ACCMODE;
+			if (how == O_RDONLY) {
+				lock_release(fh->fh_lock); // Release before breaking!
+				err = EBADF; 
+				break;
+			}
+
+			// 4. uio/iovec Setup
+			struct iovec iov;
+			struct uio u;
+			size_t length = tf->tf_a2;
+
+			//Set up the shipping container (iovec)
+			iov.iov_ubase = (userptr_t)tf->tf_a1; // The hostile user buffer
+			iov.iov_len = length;
+
+			// Set up the truck (uio)
+			u.uio_iov = &iov;
+			u.uio_iovcnt = 1;
+			u.uio_offset = fh->offset; // Start writing at the file's current offset
+			u.uio_resid = length; // Total bytes to write
+			u.uio_segflg = UIO_USERSPACE; // Buffer is in user space
+			u.uio_rw = UIO_WRITE; // This is a write operation
+			u.uio_space = proc_getas(); // Address space of the current process
+
+			// 5. Perform the Write
+			// Pass the VFS the vnode and uio instructions
+			// It will safely copyin the data and write to the disk
+
+
+			err = VOP_WRITE(fh->vn, &u);
+			if (err) {
+				// Disk full, I/O error or bad user pointer
+				lock_release(fh->fh_lock);
+				break;
+			}
+		
+			// 6. Clean-up
+			// VOP_WRITE() automatically updates uio_offset and uio_resid by the amount of bytes it successfully wrote.
+			fh->offset = u.uio_offset;
+			lock_release(fh->fh_lock);
+
+			// uio_resid should be 0 if everything was written, but if it's not, we return the amount that was successfully write
+			// So (Total length - residual) = Bytes successfully written
+			retval = length - u.uio_resid;
 			break;
 		}
 
-		case SYS__exit
+		case SYS__READ:
+		{
+			//1. Extraction and Validation phase
+			int fd = tf->tf_a0;
+			if (fd < 0 || fd >= OPEN_MAX) {
+				err = EBADF;
+				break;
+			}
+
+			// 2. FDT Extraction & Null Check
+			spinlock_acquire(&curproc->p_lock);
+			struct file_handle *fh = curproc->p_fdtable[fd];
+			if (fh == NULL) {
+				spinlock_release(&curproc->p_lock);
+				err = EBADF;
+				break;
+			}
+			spinlock_release(&curproc->p_lock);
+
+			// 3. File Handle Lock & Permission Check
+			lock_acquire(fh->fh_lock);
+
+			// O_ACCMODE is a bitmask (usually value 3) used to extract the read/write bits.
+			int how = fh->access_flags & O_ACCMODE;
+			if (how == O_WRONLY || how == O_RDWR) {
+				lock_release(fh->fh_lock); // Release before breaking!
+				err = EBADF; 
+				break;
+			}
+
+			// 4. uio/iovec Setup
+			struct iovec iov;
+			struct uio u;
+			size_t length = tf->tf_a2;
+
+			//Set up the shipping container (iovec)
+			iov.iov_ubase = (userptr_t)tf->tf_a1; // The hostile user buffer
+			iov.iov_len = length;
+
+			// Set up the truck (uio)
+			u.uio_iov = &iov;
+			u.uio_iovcnt = 1;
+			u.uio_offset = fh->offset; // Start writing at the file's current offset
+			u.uio_resid = length; // Total bytes to write
+			u.uio_segflg = UIO_USERSPACE; // Buffer is in user space
+			u.uio_rw = UIO_READ; // This is a read operation
+			u.uio_space = proc_getas(); // Address space of the current process
+
+			// 5. Perform the Read
+			// Pass the VFS the vnode and uio instructions
+			// It will safely copyin the data and write to the disk
+
+
+			err = VOP_READ(fh->vn, &u);
+			if (err) {
+				// Disk full, I/O error or bad user pointer
+				lock_release(fh->fh_lock);
+				break;
+			}
+		
+			// 6. Clean-up
+			// VOP_READ() automatically updates uio_offset and uio_resid by the amount of bytes it successfully read.
+			fh->offset = u.uio_offset;
+			lock_release(fh->fh_lock);
+
+			// uio_resid should be 0 if everything was written, but if it's not, we return the amount that was successfully write
+			// So (Total length - residual) = Bytes successfully written
+			retval = length - u.uio_resid;
+			break;
+		}
+
+		case SYS__exit:
 		{
 			// Hack: Just violently destroy the thread so it doesn't return to user space.
 			// We will replace this with proper sys__exit logic later.
@@ -159,15 +268,15 @@ syscall(struct trapframe *tf)
 		}
 
 	    default:
-		kprintf("Unknown syscall %d\n", callno);
-		err = ENOSYS;
+		kprintf("unknown syscall %d\n", callno);
+		err = enosys;
 		break;
 	}
 
 
 	if (err) {
 		/*
-		 * Return the error code. This gets converted at
+		 * return the error code. this gets converted at
 		 * userlevel to a return value of -1 and the error
 		 * code in errno.
 		 */
@@ -175,7 +284,7 @@ syscall(struct trapframe *tf)
 		tf->tf_a3 = 1;      /* signal an error */
 	}
 	else {
-		/* Success. */
+		/* success. */
 		tf->tf_v0 = retval;
 		tf->tf_a3 = 0;      /* signal no error */
 	}

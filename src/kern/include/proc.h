@@ -73,7 +73,7 @@ struct proc {
 
 	/* add more material here as needed */
 
-	struct file_hanlde *p_fdt[OPEN_MAX]; // The File Descriptor Table of the process
+	struct file_handle *p_fdt[OPEN_MAX]; // The File Descriptor Table of the process
 };
 
 /* This is the process structure for the kernel and for kernel-only threads. */
