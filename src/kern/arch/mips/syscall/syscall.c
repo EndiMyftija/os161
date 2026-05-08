@@ -259,6 +259,31 @@ syscall(struct trapframe *tf)
 			break;
 		}
 
+		case SYS_CLOSE:
+		{
+			//1. Array bounds check
+			int fd = tf->tf_a0;
+			if (fd < 0 || fd >= OPEN_MAX) {
+				err = EBADF;
+				break;
+			}
+
+			spinlock_acquire(&curproc->p_lock);
+			struct file_handle *fh =curproc->p_fdt[fd];
+			if (fh == NULL) {
+				spinlock_release(&curproc->p_lock);
+				err = EBADF;
+				break;
+			}
+			curproc->p_fdt[fd] = NULL; // Remove the file handle from the FDT
+			spinlock_release(&curproc->p_lock);
+
+			file_handle_decref(fh);
+
+			err = 0; // Success
+			break;
+		}
+
 		case SYS__exit:
 		{
 			// Hack: Just violently destroy the thread so it doesn't return to user space.
