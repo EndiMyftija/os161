@@ -14,7 +14,7 @@ struct file_handle {
 };
 
 // Function prototypes for file.c go here...
-struct *file_handle file_handle_create(struct *vnode, int access_flag);
+struct file_handle *file_handle_create(struct vnode *vn, int access_flag);
 void file_handle_decref(struct file_handle *file_handle_ptr);
 void file_handle_incref(struct file_handle *file_handle_ptr);
 

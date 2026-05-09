@@ -46,6 +46,7 @@
 #include <test.h>
 
 #include <kern/limits.h>
+#include <file.h>
 /*
  * Load program "progname" and start running it in usermode.
  * Does not return except on error.
@@ -72,13 +73,13 @@ runprogram(char *progname)
     vfs_open(path_err, O_WRONLY, 0, &vn_err);
 
     // 2. Wrap them in your file_handle objects and attach to the CURRENT process
-    curproc->p_fdtable[0] = file_handle_create(vn_in, O_RDONLY);
-    curproc->p_fdtable[1] = file_handle_create(vn_out, O_WRONLY);
-    curproc->p_fdtable[2] = file_handle_create(vn_err, O_WRONLY);
+    curproc->p_fdt[0] = file_handle_create(vn_in, O_RDONLY);
+    curproc->p_fdt[1] = file_handle_create(vn_out, O_WRONLY);
+    curproc->p_fdt[2] = file_handle_create(vn_err, O_WRONLY);
 
     // 3. Ensure the rest of the array is NULL
-    for (int i = 3; i < OPEN_MAX; i++) {
-        curproc->p_fdtable[i] = NULL;
+    for (int i = 3; i < __OPEN_MAX; i++) {
+        curproc->p_fdt[i] = NULL;
     }
 
 	/* Open the file. */

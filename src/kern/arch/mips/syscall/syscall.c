@@ -40,8 +40,11 @@
 #include <proc.h>
 #include <vnode.h>
 #include <uio.h>
-#include <iovec.h>
+#include <kern/iovec.h>
 #include <vnode.h>
+#include <synch.h>
+#include <file.h>
+#include <kern/fcntl.h>
 
 /*
  * System call dispatcher.
@@ -121,14 +124,14 @@ syscall(struct trapframe *tf)
 		{
 			//1. Extraction and Validation phase
 			int fd = tf->tf_a0;
-			if (fd < 0 || fd >= OPEN_MAX) {
+			if (fd < 0 || fd >= __OPEN_MAX) {
 				err = EBADF;
 				break;
 			}
 
 			// 2. FDT Extraction & Null Check
 			spinlock_acquire(&curproc->p_lock);
-			struct file_handle *fh = curproc->p_fdtable[fd];
+			struct file_handle *fh = curproc->p_fdt[fd];
 			if (fh == NULL) {
 				spinlock_release(&curproc->p_lock);
 				err = EBADF;
@@ -140,7 +143,7 @@ syscall(struct trapframe *tf)
 			lock_acquire(fh->fh_lock);
 
 			// O_ACCMODE is a bitmask (usually value 3) used to extract the read/write bits.
-			int how = fh->access_flags & O_ACCMODE;
+			int how = fh->access_flag & O_ACCMODE;
 			if (how == O_RDONLY) {
 				lock_release(fh->fh_lock); // Release before breaking!
 				err = EBADF; 
@@ -188,18 +191,18 @@ syscall(struct trapframe *tf)
 			break;
 		}
 
-		case SYS__READ:
+		case SYS_read:
 		{
 			//1. Extraction and Validation phase
 			int fd = tf->tf_a0;
-			if (fd < 0 || fd >= OPEN_MAX) {
+			if (fd < 0 || fd >= __OPEN_MAX) {
 				err = EBADF;
 				break;
 			}
 
 			// 2. FDT Extraction & Null Check
 			spinlock_acquire(&curproc->p_lock);
-			struct file_handle *fh = curproc->p_fdtable[fd];
+			struct file_handle *fh = curproc->p_fdt[fd];
 			if (fh == NULL) {
 				spinlock_release(&curproc->p_lock);
 				err = EBADF;
@@ -211,7 +214,7 @@ syscall(struct trapframe *tf)
 			lock_acquire(fh->fh_lock);
 
 			// O_ACCMODE is a bitmask (usually value 3) used to extract the read/write bits.
-			int how = fh->access_flags & O_ACCMODE;
+			int how = fh->access_flag & O_ACCMODE;
 			if (how == O_WRONLY || how == O_RDWR) {
 				lock_release(fh->fh_lock); // Release before breaking!
 				err = EBADF; 
@@ -259,11 +262,11 @@ syscall(struct trapframe *tf)
 			break;
 		}
 
-		case SYS_CLOSE:
+		case SYS_close:
 		{
 			//1. Array bounds check
 			int fd = tf->tf_a0;
-			if (fd < 0 || fd >= OPEN_MAX) {
+			if (fd < 0 || fd >= __OPEN_MAX) {
 				err = EBADF;
 				break;
 			}
@@ -294,7 +297,7 @@ syscall(struct trapframe *tf)
 
 	    default:
 		kprintf("unknown syscall %d\n", callno);
-		err = enosys;
+		err = ENOSYS;
 		break;
 	}
 

@@ -1,8 +1,9 @@
 #include <file.h>
 #include <kern/errno.h>
 #include <lib.h>
+#include <vfs.h>
 
-struct file_handle *file_handle_create(struct vnode *vn, int access_flags) {
+struct file_handle *file_handle_create(struct vnode *vn, int access_flag) {
     struct file_handle *fh = kmalloc(sizeof(struct file_handle));
     if (fh == NULL) {
         return NULL;
@@ -17,7 +18,7 @@ struct file_handle *file_handle_create(struct vnode *vn, int access_flags) {
     fh->offset = 0;
     fh->refcount = 1; // It exists, so it has 1 reference
     fh->vn = vn;
-    fh->access_flags = access_flags; // Fixed missing semicolon
+    fh->access_flag = access_flag; // Fixed missing semicolon
 
     return fh;
 }

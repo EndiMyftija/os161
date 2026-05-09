@@ -363,6 +363,7 @@ file      vfs/vfslist.c
 file      vfs/vfslookup.c
 file      vfs/vfspath.c
 file      vfs/vnode.c
+file      syscall/file.c
 
 #
 # VFS devices

@@ -83,7 +83,7 @@ proc_create(const char *name)
 	proc->p_cwd = NULL;
 
 	// Initialize the File Descriptor Table to NULL
-	for(int i = 0; i < OPEN_MAX; i++) {
+	for(int i = 0; i < __OPEN_MAX; i++) {
 		proc->p_fdt[i] = NULL;
 	}
 
