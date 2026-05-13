@@ -45,6 +45,7 @@
 #include <synch.h>
 #include <file.h>
 #include <kern/fcntl.h>
+#include <vfs.h>
 
 /*
  * System call dispatcher.
@@ -284,6 +285,71 @@ syscall(struct trapframe *tf)
 			file_handle_decref(fh);
 
 			err = 0; // Success
+			break;
+		}
+
+		case SYS_open:
+		{
+			const_userptr_t user_path = (const_userptr_t) tf->tf_a0;
+			int access_flag = tf->tf_a1; 
+
+			// 1. Allocate Kernel Buffer
+			char* kern_buffer = kmalloc(__PATH_MAX);
+			if (kern_buffer == NULL) {
+				err = ENOMEM;
+				break;
+			}
+
+			// 2. Safe Copy
+			size_t path_length;
+			err = copyinstr(user_path, kern_buffer, __PATH_MAX, &path_length);
+			if (err) {
+				kfree(kern_buffer);
+				break;
+			}
+
+			// 3. Open the File (Let the VFS do the heavy lifting)
+			struct vnode *vn;
+			err = vfs_open(kern_buffer, access_flag, 0, &vn);
+			
+			// The string is no longer needed. Free it NOW.
+			kfree(kern_buffer);
+
+			if (err) {
+				break; 
+			}
+
+			// 4. Create the Handle
+			struct file_handle* fh = file_handle_create(vn, access_flag);
+			if (fh == NULL) {
+				vfs_close(vn); // Don't leak the vnode if kmalloc fails!
+				err = ENOMEM;
+				break;
+			}
+
+			// 5. The FDT Search
+			spinlock_acquire(&curproc->p_lock);
+			int fd = -1;
+			for (int i = 3; i < __OPEN_MAX; i++) {
+				if (curproc->p_fdt[i] == NULL) {
+					curproc->p_fdt[i] = fh;
+					fd = i;
+					break;
+				}
+			}
+			spinlock_release(&curproc->p_lock);
+
+			// 6. Handle the Full Table
+			if (fd == -1) {
+				// We failed to find a slot. Destroy the handle (this also closes the vnode).
+				file_handle_decref(fh);
+				err = EMFILE; 
+				break;
+			}
+
+			// 7. Success
+			retval = fd;
+			err = 0;
 			break;
 		}
 
